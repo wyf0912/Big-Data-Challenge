@@ -1,12 +1,13 @@
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import Sampler
 import numpy as np
 
 
 class Data(Dataset):
-    def __init__(self, folder_name='./data', load_data=False):
-        if load_data:
+    def __init__(self, folder_name='./data', reload=False):
+        if reload:
             self.user_data = np.load(folder_name + '/' + 'dealed_data.npy')
+            print(self.user_data[1])
         else:
             self.register_log = np.loadtxt(folder_name + '/' + 'user_register_log.txt', dtype=int)
             self.activity_log = np.loadtxt(folder_name + '/' + 'user_activity_log.txt', dtype=int)
@@ -19,13 +20,22 @@ class Data(Dataset):
         # print(self.register_log)
 
     def __link(self):
+        user_dict = {}
+        for user in self.register_log:
+            user_dict[user[0]] = []
+
+        for i, act in enumerate(self.activity_log):
+            user_dict[act[0]].append(i)
+
+        print('Finish statistics action')
+
         for user in self.register_log:
             launch_info_list = np.where(self.launch_log[:, 0] == user[0])
             video_create_list = np.where(self.video_create_log[:, 0] == user[0])
-            activity_list = np.where(self.activity_log[:, 0] == user[0])
+            # activity_list = np.where(self.activity_log[:, 0] == user[0])
             self.user_data.append({'register_info': user, 'launch_info': self.launch_log[launch_info_list, 1],
                                    'video_create_info': self.video_create_log[video_create_list, 1],
-                                   'activity_info': self.activity_log[activity_list, 1:]})
+                                   'activity_info': self.activity_log[user_dict[user[0]], 1:]})
 
         # print(self.user_data[29962:29965])
         print('Finished the Data Preprocessing')
@@ -47,11 +57,12 @@ class TrainRandomSampler(Sampler):
     def __init__(self, data_source, train_ratio=0.8):
         self.data_source = data_source
         np.random.seed(5)
-        self.__train_list = np.random.shuffle(np.arange(len(self.data_source))).tolist()
+        self.__train_list = np.arange(len(self.data_source))
+        np.random.shuffle(self.__train_list)
         self.__train_list = self.__train_list[0:int(len(self.__train_list) * train_ratio)]
 
     def __iter__(self):
-        return iter(self.__train_list)
+        return iter(list(self.__train_list))
 
     def __len__(self):
         return len(self.__train_list)
@@ -66,16 +77,32 @@ class ValidRandomSampler(Sampler):
     def __init__(self, data_source, valid_ratio=0.2):
         self.data_source = data_source
         np.random.seed(5)
-        self.__valid_list = np.random.shuffle(np.arange(len(self.data_source))).tolist()
-        self.__valid_list = self.__valid_list[int(len(self.__valid_list) * (1-valid_ratio)):]
+        self.__valid_list = np.arange(len(self.data_source))
+        np.random.shuffle(self.__valid_list)
+        self.__valid_list = self.__valid_list[int(len(self.__valid_list) * (1 - valid_ratio)):]
 
     def __iter__(self):
-        return iter(self.__valid_list)
+        return iter(list(self.__valid_list))
 
     def __len__(self):
         return len(self.__valid_list)
 
 
-if __name__ == '__main__':
-    Data()
+class TransData():
+    def __init__(self):
+        pass
 
+
+if __name__ == '__main__':
+    data = Data(reload=True)
+    train_sample = TrainRandomSampler(data)
+    train_loader = DataLoader(
+        dataset=data,
+        batch_size=1,  # 批大小
+        num_workers=2,  # 多线程读取数据的线程数
+        sampler = train_sample
+    )
+    for i,data in enumerate(train_loader):
+        print(data)
+        if i>10:
+            break
