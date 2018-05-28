@@ -4,13 +4,13 @@
 暂时把数据存储成如下格式：
 
 {\
-    'register_info':[], \
-    'launch_info':[], \
-    'video_create_info':[],\
-    'activity_info':[]\
+    'register_info':[0,...], \
+    'launch_info':[0,...], \
+    'video_create_info':[0,...],\
+    'activity_info':[[0,0,0,0,0],...]\
 }
 
-继承的torch.utils.data.Dataset
+继承的torch.utils.data.Dataset。 其中填充的零是为了防止torch维度零报错，0代表没有数据。
 
 ### 数据采样
 在数据集里面随机采样，固定seed。然后按比例分训练集和测试集。

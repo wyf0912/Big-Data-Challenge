@@ -7,7 +7,7 @@ class Data(Dataset):
     def __init__(self, folder_name='./data', reload=False):
         if reload:
             self.user_data = np.load(folder_name + '/' + 'dealed_data.npy')
-            print(self.user_data[1])
+            #print(self.user_data[1])
         else:
             self.register_log = np.loadtxt(folder_name + '/' + 'user_register_log.txt', dtype=int)
             self.activity_log = np.loadtxt(folder_name + '/' + 'user_activity_log.txt', dtype=int)
@@ -32,12 +32,24 @@ class Data(Dataset):
         for user in self.register_log:
             launch_info_list = np.where(self.launch_log[:, 0] == user[0])
             video_create_list = np.where(self.video_create_log[:, 0] == user[0])
-            # activity_list = np.where(self.activity_log[:, 0] == user[0])
-            self.user_data.append({'register_info': user, 'launch_info': self.launch_log[launch_info_list, 1],
-                                   'video_create_info': self.video_create_log[video_create_list, 1],
-                                   'activity_info': self.activity_log[user_dict[user[0]], 1:]})
+            launch_info = self.launch_log[launch_info_list, 1]
+            video_create_info = self.video_create_log[video_create_list, 1]
+            activity_info = self.activity_log[user_dict[user[0]], 1:]
+            if not launch_info.size:
+                launch_info = np.array([0], dtype=int)
+            if not video_create_info.size:
+                video_create_info = np.array([0], dtype=int)
+            if not activity_info.size:
+                activity_info = np.array([0, 0, 0, 0, 0], dtype=int)
+            self.user_data.append(
+                {'register_info': user,
+                 'launch_info': launch_info,
+                 'video_create_info':
+                     video_create_info,
+                 'activity_info':
+                     activity_info})
 
-        # print(self.user_data[29962:29965])
+            # print(self.user_data[29962:29965])
         print('Finished the Data Preprocessing')
 
     def __getitem__(self, item):
@@ -100,9 +112,9 @@ if __name__ == '__main__':
         dataset=data,
         batch_size=1,  # 批大小
         num_workers=2,  # 多线程读取数据的线程数
-        sampler = train_sample
+        sampler=train_sample
     )
-    for i,data in enumerate(train_loader):
-        print(data)
-        if i>10:
+    for i, data in enumerate(train_loader):
+        print(data['register_info'])
+        if i > 10:
             break
