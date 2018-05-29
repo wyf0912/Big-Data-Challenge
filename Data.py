@@ -106,7 +106,7 @@ class TransData(Dataset):
             self.trans_form_data = np.load('./data/trans_form.npy')
         else:
             assert isinstance(data, Data)
-            self.trans_form_data = [] #np.array([])
+            self.trans_form_data = []  # np.array([])
             self.data = data
             self.user_data = self.data.user_data
             self.__make_label()
@@ -130,22 +130,32 @@ class TransData(Dataset):
         print('Make label successfully')
 
     def __trans_form(self, data):
-        result = [[data['register_info'][0], data['base_info'][2]]]
         reg_type = np.zeros(12)
         reg_type[data['register_info'][2]] = 1  # 来源渠道
-        result.append(reg_type)
+        result = [np.concatenate(
+            (np.array([data['register_info'][0], data['base_info'][2], data['base_info'][0], data['base_info'][1]]),
+             np.zeros(8))),
+            reg_type]  # 用户ID flag strat_time end_time  and 注册type[12]
+        page_type = np.zeros(5)
+        action_type = np.zeros(6)
         flag = data['activity_info'][0, 0]  # 判断是否是一天的第一个数据
         for item in data['activity_info']:
-            page_type = np.zeros(5)
-            page_type[item[1]] = 1  # 页面种类
-            action_type = np.zeros(6)
-            action_type[item[4]] = 1  # 行为类型
-            if item[0] >= flag:
-                result.append(np.concatenate((np.array([1]), np.array([item[0]]), page_type, action_type)))
-                flag = item[0]
+            if item[0] == flag:
+                page_type[item[1]] += 1  # 页面种类
+                action_type[item[4]] += 1  # 行为类型
             else:
-                result.append(np.concatenate((np.array([0]), np.array([item[0]]), page_type, action_type)))
-        #print(np.array(result))
+                result.append(np.concatenate((
+                    np.array([flag]), page_type,
+                    action_type)))  # day,page_type[5],action_type[6]) total:12
+                flag = item[0]
+                page_type = np.zeros(5)
+                action_type = np.zeros(6)
+                # print(np.array(result))
+        result.append(np.concatenate((
+            np.array([flag]), page_type,
+            action_type)))  # day,page_type[5],action_type[6]) total:12
+        for i in range(32-len(result)):
+            result.append(np.zeros(12))
         return np.array(result)
 
     def __trans_all_data(self):
@@ -153,19 +163,20 @@ class TransData(Dataset):
             temp = self.__trans_form(item)
             self.trans_form_data.append(temp)
             # self.trans_form_data.append()
-            if i % 2000 == 0 and i>0:
+            if i % 2000 == 0 and i > 0:
                 print(i)
         print('saving the transported data')
-        np.save('./data/trans_form.npy', np.array(self.trans_form_data))  # 保存转换形式后的数据
+        np.save('./data/trans_form.npy', np.array(self.trans_form_data, dtype=int))  # 保存转换形式后的数据
         print('Save successfully')
+
     def __getitem__(self, item):
-        #return 1
+        # return 1
         return self.trans_form_data[item]
 
     # return self.user_data[item]
 
     def __len__(self):
-        return len(self.user_data)
+        return len(self.trans_form_data)
 
 
 class Analysis():
@@ -184,7 +195,6 @@ class Analysis():
         print("注册种类个数：", len(dic))
         print(dic)
         return dic
-
 
     def device_type(self):
         dic = {}
@@ -236,13 +246,13 @@ if __name__ == '__main__':
         train_sample = TrainRandomSampler(transed)
         train_loader = DataLoader(
             dataset=transed,
-            batch_size=1,  # 批大小
+            batch_size=10,  # 批大小
             num_workers=1,  # 多线程读取数据的线程数
             sampler=train_sample
         )
 
         for i, data in enumerate(train_loader):
-            #print(data)
+            print(data.shape)
             print(type(data))
-            if i >= 3:
+            if i >= 1:
                 break

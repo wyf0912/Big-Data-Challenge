@@ -1,29 +1,38 @@
 import torch
-from torch import nn
-from torch.autograd import Variable
-import numpy as np
-import matplotlib.pyplot as plt
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
 
 
-class RNN(nn.Module):
-    def __init__(self):
-        super(RNN, self).__init__()
+class LSTMTagger(nn.Module):
+    '''https://pytorch.org/tutorials/beginner/nlp/sequence_models_tutorial.html#lstm-s-in-pytorch'''
 
-        self.rnn = nn.RNN(  # 这回一个普通的 RNN 就能胜任
-            input_size=1,
-            hidden_size=32,  # rnn hidden unit
-            num_layers=1,  # 有几层 RNN layers
-            batch_first=True,  # input & output 会是以 batch size 为第一维度的特征集 e.g. (batch, time_step, input_size)
-        )
-        self.out = nn.Linear(32, 1)
+    def __init__(self, input_dim, hidden_dim, tagset_size):
+        super(LSTMTagger, self).__init__()
+        self.hidden_dim = hidden_dim
 
-    def forward(self, x, h_state):  # 因为 hidden state 是连续的, 所以我们要一直传递这一个 state
-        # x (batch, time_step, input_size)
-        # h_state (n_layers, batch, hidden_size)
-        # r_out (batch, time_step, output_size)
-        r_out, h_state = self.rnn(x, h_state)  # h_state 也要作为 RNN 的一个输入
+        # self.word_embeddings = nn.Embedding(vocab_size, embedding_dim)
 
-        outs = []  # 保存所有时间点的预测值
-        for time_step in range(r_out.size(1)):  # 对每一个时间点计算 output
-            outs.append(self.out(r_out[:, time_step, :]))
-        return torch.stack(outs, dim=1), h_state
+        # The LSTM takes word embeddings as inputs, and outputs hidden states
+        # with dimensionality hidden_dim.
+        self.lstm = nn.LSTM(input_dim, hidden_dim)
+
+        # The linear layer that maps from hidden state space to tag space
+        self.hidden2tag = nn.Linear(hidden_dim, tagset_size)
+        self.hidden = self.init_hidden()
+
+    def init_hidden(self):
+        # Before we've done anything, we dont have any hidden state.
+        # Refer to the Pytorch documentation to see exactly
+        # why they have this dimensionality.
+        # The axes semantics are (num_layers, minibatch_size, hidden_dim)
+        return (torch.zeros(1, 1, self.hidden_dim),
+                torch.zeros(1, 1, self.hidden_dim))
+
+    def forward(self, data):
+        embeds = self.word_embeddings(sentence)
+        lstm_out, self.hidden = self.lstm(
+            embeds.view(len(sentence), 1, -1), self.hidden)
+        tag_space = self.hidden2tag(lstm_out.view(len(sentence), -1))
+        tag_scores = F.log_softmax(tag_space, dim=1)
+        return tag_scores
