@@ -7,7 +7,7 @@ class Data(Dataset):
     def __init__(self, folder_name='./data', reload=False):
         if reload:
             self.user_data = np.load(folder_name + '/' + 'dealed_data.npy')
-            #print(self.user_data[1])
+            print(self.user_data[1])
         else:
             self.register_log = np.loadtxt(folder_name + '/' + 'user_register_log.txt', dtype=int)
             self.activity_log = np.loadtxt(folder_name + '/' + 'user_activity_log.txt', dtype=int)
@@ -16,6 +16,7 @@ class Data(Dataset):
             print('Read Data Successfully')
             self.user_data = []
             self.__link()
+            self.__onehot()
             np.save(folder_name + '/' + 'dealed_data.npy', np.array(self.user_data))
         # print(self.register_log)
 
@@ -37,10 +38,17 @@ class Data(Dataset):
             activity_info = self.activity_log[user_dict[user[0]], 1:]
             if not launch_info.size:
                 launch_info = np.array([0], dtype=int)
+            else:
+                launch_info = np.sort(launch_info[0])
             if not video_create_info.size:
                 video_create_info = np.array([0], dtype=int)
+            else:
+                video_create_info = np.sort(video_create_info[0])
             if not activity_info.size:
                 activity_info = np.array([0, 0, 0, 0, 0], dtype=int)
+            else:
+                activity_info = activity_info[np.lexsort(activity_info.T)]
+
             self.user_data.append(
                 {'register_info': user,
                  'launch_info': launch_info,
@@ -57,6 +65,9 @@ class Data(Dataset):
 
     def __len__(self):
         return len(self.user_data)
+
+    def __onehot(self):
+        pass
 
 
 class TrainRandomSampler(Sampler):
@@ -104,17 +115,87 @@ class TransData():
     def __init__(self):
         pass
 
+    def make_label(self, data):
+        register_info = data['register_info']
+        launch_info = data['launch_info':]
+        video_create_info = data['video_create_info']
+        activity_info = data['activity_info']
+        start_time = register_info[0]
+        end_time = max([launch_info[-1], video_create_info[-1], activity_info[-1][0]]) #最后一次活跃的时间
 
+
+
+class Analysis():
+    def __init__(self):
+        self.register_data = np.loadtxt('./data/user_register_log.txt', dtype=int)
+        # self.dealed_data = np.load('./data/dealed_data.npy')
+        self.action_data = np.loadtxt('./data/user_activity_log.txt', dtype=int)
+
+    def register_type(self):
+        dic = {}
+        for i in self.register_data:
+            try:
+                dic[i[2]] += 1
+            except:
+                dic[i[2]] = 1
+        print("注册种类个数：", len(dic))
+        print(dic)
+        return dic
+
+    def device_type(self):
+        dic = {}
+        for i in self.register_data:
+            try:
+                dic[i[3]] += 1
+            except:
+                dic[i[3]] = 1
+        print("设备类型数：", len(dic))
+        print(dic)
+        return dic
+
+    def page_type(self):
+        dic = {}
+        for i in self.action_data:
+            try:
+                dic[i[2]] += 1
+            except:
+                dic[i[2]] = 1
+        print("页面类型数：", len(dic))
+        print(dic)
+        return dic
+
+    def action_type(self):
+        dic = {}
+        for i in self.action_data:
+            try:
+                dic[i[5]] += 1
+            except:
+                dic[i[5]] = 1
+        print("行为类型：", len(dic))
+        print(dic)
+        return dic
+
+
+ANALYSIS = 0
 if __name__ == '__main__':
-    data = Data(reload=True)
-    train_sample = TrainRandomSampler(data)
-    train_loader = DataLoader(
-        dataset=data,
-        batch_size=1,  # 批大小
-        num_workers=2,  # 多线程读取数据的线程数
-        sampler=train_sample
-    )
-    for i, data in enumerate(train_loader):
-        print(data['register_info'])
-        if i > 10:
-            break
+    if ANALYSIS:
+        a = Analysis()
+        a.register_type()
+        a.device_type()
+        a.page_type()
+        a.action_type()
+
+    else:
+        data = Data(reload=False)
+        train_sample = TrainRandomSampler(data)
+        train_loader = DataLoader(
+            dataset=data,
+            batch_size=1,  # 批大小
+            num_workers=2,  # 多线程读取数据的线程数
+            sampler=train_sample
+        )
+        for i, data in enumerate(train_loader):
+            print(data)
+            print(type(data))
+            if i >= 3:
+                break

@@ -1,2 +1,6 @@
 
 *.txt
+*.iml
+*.xml
+a3d6_chusai_a_train.tar.gz
+data/dealed_data.npy
