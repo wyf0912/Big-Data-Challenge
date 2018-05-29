@@ -3,11 +3,11 @@ from torch.utils.data.sampler import Sampler
 import numpy as np
 
 
-class Data(Dataset):
+class Data():
     def __init__(self, folder_name='./data', reload=False):
         if reload:
             self.user_data = np.load(folder_name + '/' + 'dealed_data.npy')
-            print(self.user_data[1])
+            # print(self.user_data[1])
         else:
             self.register_log = np.loadtxt(folder_name + '/' + 'user_register_log.txt', dtype=int)
             self.activity_log = np.loadtxt(folder_name + '/' + 'user_activity_log.txt', dtype=int)
@@ -16,7 +16,6 @@ class Data(Dataset):
             print('Read Data Successfully')
             self.user_data = []
             self.__link()
-            self.__onehot()
             np.save(folder_name + '/' + 'dealed_data.npy', np.array(self.user_data))
         # print(self.register_log)
 
@@ -45,10 +44,9 @@ class Data(Dataset):
             else:
                 video_create_info = np.sort(video_create_info[0])
             if not activity_info.size:
-                activity_info = np.array([0, 0, 0, 0, 0], dtype=int)
+                activity_info = np.array([[0, 0, 0, 0, 0], ], dtype=int)
             else:
-                activity_info = activity_info[np.lexsort(activity_info.T)]
-
+                activity_info = activity_info[np.lexsort(activity_info[:, ::-1].T)]
             self.user_data.append(
                 {'register_info': user,
                  'launch_info': launch_info,
@@ -59,15 +57,6 @@ class Data(Dataset):
 
             # print(self.user_data[29962:29965])
         print('Finished the Data Preprocessing')
-
-    def __getitem__(self, item):
-        return self.user_data[item]
-
-    def __len__(self):
-        return len(self.user_data)
-
-    def __onehot(self):
-        pass
 
 
 class TrainRandomSampler(Sampler):
@@ -111,18 +100,45 @@ class ValidRandomSampler(Sampler):
         return len(self.__valid_list)
 
 
-class TransData():
-    def __init__(self):
-        pass
+class TransData(Dataset):
+    def __init__(self, reload=True, data=None):
+        if reload:
+            self.user_data = np.load('./data/translated.npy')
+        else:
+            assert isinstance(data, Data)
+            self.data = data
+            self.user_data = self.data.user_data
+            self.__make_label()
 
-    def make_label(self, data):
-        register_info = data['register_info']
-        launch_info = data['launch_info':]
-        video_create_info = data['video_create_info']
-        activity_info = data['activity_info']
-        start_time = register_info[0]
-        end_time = max([launch_info[-1], video_create_info[-1], activity_info[-1][0]]) #最后一次活跃的时间
+    def __make_label(self):
+        for data in self.user_data:
+            register_info = data['register_info']
+            launch_info = data['launch_info']
+            video_create_info = data['video_create_info']
+            activity_info = data['activity_info']
+            start_time = register_info[1]
+            end_time = max([launch_info[-1], video_create_info[-1], activity_info[-1][0]])  # 最后一次活跃的时间
+            if 30 - end_time >= 7:
+                active = 0
+            else:
+                active = 1
+            data['base_info'] = [start_time, end_time, active]
+        np.save('./data/translated.npy', np.array(self.user_data))
+        print('Make label successfully')
 
+    def __trans_form(self, data):
+        reg_type = np.zeros(12)
+        reg_type[data['register_info'][2]] = 1  # 来源渠道
+        page_type = np.zeros(5)
+        page_type[data['activity_info'][1]] = 1  # 页面种类
+        action_type = np.zeros(6)
+        action_type[data['activity_info'][4]] = 1  # 行为类型
+
+    def __getitem__(self, item):
+        #return self.__trans_form(self.user_data[item])
+        return self.user_data[item]
+    def __len__(self):
+        return len(self.user_data)
 
 
 class Analysis():
@@ -186,16 +202,21 @@ if __name__ == '__main__':
         a.action_type()
 
     else:
-        data = Data(reload=False)
-        train_sample = TrainRandomSampler(data)
+        data = Data(reload=True)
+        transed = TransData(data=data,reload=False)
+        train_sample = TrainRandomSampler(transed)
         train_loader = DataLoader(
-            dataset=data,
+            dataset=transed,
             batch_size=1,  # 批大小
             num_workers=2,  # 多线程读取数据的线程数
             sampler=train_sample
         )
+
+
         for i, data in enumerate(train_loader):
             print(data)
             print(type(data))
             if i >= 3:
                 break
+
+
