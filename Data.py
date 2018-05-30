@@ -101,7 +101,7 @@ class ValidRandomSampler(Sampler):
 
 
 class TransData(Dataset):
-    def __init__(self, reload=True, data=None):
+    def __init__(self, reload=True, data=None, delete_data= True):
         if reload:
             self.trans_form_data = np.load('./data/trans_form.npy')
         else:
@@ -109,8 +109,10 @@ class TransData(Dataset):
             self.trans_form_data = []  # np.array([])
             self.data = data
             self.user_data = self.data.user_data
+            self.__data_num = len(self.user_data)
             self.__make_label()
             self.__trans_all_data()
+            self.__reload = reload
 
     def __make_label(self):
         for data in self.user_data:
@@ -123,7 +125,8 @@ class TransData(Dataset):
             end_time = max([launch_info[-1], video_create_info[-1], activity_info[-1][0]])  # 最后一次活跃的时间
             if 30 - end_time >= 7:
                 active = 0
-                end_time = 31
+                end_time = 24
+
             else:
                 active = 1
             data['base_info'] = [start_time, end_time, active]
@@ -169,12 +172,16 @@ class TransData(Dataset):
                 temp[0] = i
                 sorted_result.append(temp)
 
+        if sorted_result[0][2]>=24:
+            '''若注册时间在最后七天 则扔掉'''
+            return None
         return np.array(sorted_result)
 
     def __trans_all_data(self):
         for i, item in enumerate(self.user_data):
             temp = self.__trans_form(item)
-            self.trans_form_data.append(temp)
+            if temp is not None:
+                self.trans_form_data.append(temp)
             # self.trans_form_data.append()
             if i % 2000 == 0 and i > 0:
                 print(i)
@@ -190,7 +197,6 @@ class TransData(Dataset):
 
     def __len__(self):
         return len(self.trans_form_data)
-
 
 class Analysis():
     def __init__(self):
@@ -255,8 +261,9 @@ if __name__ == '__main__':
     else:
         data = []
         data = Data(reload=True)
-        transed = TransData(data=data, reload=False)
+        transed = TransData(data=data, reload=True)
         train_sample = TrainRandomSampler(transed)
+        valid_sample = ValidRandomSampler(transed)
         train_loader = DataLoader(
             dataset=transed,
             batch_size=1,  # 批大小
@@ -264,6 +271,8 @@ if __name__ == '__main__':
             sampler=train_sample
         )
 
+        print(transed.__len__())
+        print(train_loader.__len__())
         for i, data in enumerate(train_loader):
             #print(data)
             print(type(data))

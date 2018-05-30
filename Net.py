@@ -37,30 +37,36 @@ class LSTMTagger(nn.Module):
         for data in batch_data:
             start_time = int(data[0][2])
             end_time = int(data[0][3])
-            if int(end_time - start_time > 2):
-                true_val.append(data[0][1])
-                # for i in range(start_time+1, end_time+1):
-                # print(type(data[i]))
-                data_temp = data[start_time + 1:end_time + 1]  #
-                # print(type(data_temp.unsqueeze(0)),data_temp.unsqueeze(0).shape,data_temp.unsqueeze(0))
-                cell_data, self.hidden = self.lstm(data_temp.unsqueeze(0), self.hidden)
-                # print(self.hidden)
-                x = F.relu(self.liner_1(self.hidden[0][0]))
-                x = F.relu(self.liner_2(x))
-                x = F.sigmoid(self.ouput_layer(x))
-                predict.append(x)
-        return predict, true_val
+            true_val.append(data[0][1])
+            # for i in range(start_time+1, end_time+1):
+            # print(type(data[i]))
+            data_temp = data[start_time + 1:end_time + 1]  #
+            # print(type(data_temp.unsqueeze(0)),data_temp.unsqueeze(0).shape,data_temp.unsqueeze(0))
+            out, self.hidden = self.lstm(data_temp.unsqueeze(0), self.hidden)
+            # print(self.hidden)
+            x = F.relu(self.liner_1(self.hidden[0][0]))
+            x = F.relu(self.liner_2(x))
+            x = F.sigmoid(self.ouput_layer(x))
+            predict.append(x[0])
+        return torch.cat(predict), torch.cat(true_val)
 
 
 def train():
     lstm = LSTMTagger(12, 6).cuda()
     transed = TransData(reload=True)
     train_sample = TrainRandomSampler(transed)
+    valid_sample = ValidRandomSampler(transed)
     train_loader = DataLoader(
+        dataset=transed,
+        batch_size=60,  # 批大小
+        num_workers=5,  # 多线程读取数据的线程数
+        sampler=train_sample
+    )
+    valid_loader = DataLoader(
         dataset=transed,
         batch_size=100,  # 批大小
         num_workers=5,  # 多线程读取数据的线程数
-        sampler=train_sample
+        sampler=valid_sample
     )
     loss_function = nn.BCEWithLogitsLoss().cuda()
     optimizer = optim.SGD(lstm.parameters(), lr=0.1)
@@ -71,7 +77,7 @@ def train():
     for epoch in range(300):  # again, normally you would NOT do 300 epochs, it is toy data
         total_loss = 0
         total_num = 0
-        correct_predict_num = 0
+        total_correct_predict_num = 0
         total_activity_num = 0
         total_predict_num = 0
 
@@ -80,43 +86,90 @@ def train():
             lstm.hidden = lstm.init_hidden()
             data = Variable(data.float()).cuda()
             predict, true_val = lstm(data)
-            for i, pdt in enumerate(predict):
-                '''这里batch个数暂时不固定'''
-                true = true_val[i].unsqueeze(0)
-                loss = loss_function(pdt, true)
-                total_loss += float(loss)
-                loss.backward(retain_graph=True)
-                if int(pdt > 0.5):
-                    total_predict_num += 1
-                    if int(true == 1):
-                        correct_predict_num += 1
-                if int(true==1):
-                    total_activity_num += 1
+            loss = loss_function(predict, true_val)
+            total_loss += float(loss)
+            loss.backward()
 
-            total_num += len(predict)
+            predict_num = torch.sum(predict>0.5).float()
+            activity_num = torch.sum(true_val).float()
+            correct_predict_num = torch.sum((predict>0.5).float()*true_val.float()).float()
+            pre = correct_predict_num / predict_num
+            recall = correct_predict_num / activity_num
+            f1_score = 2 * pre * recall / (pre + recall+0.00001) #加一个数防止nan
+            #print(f1_score)
+            #loss = 1 - f1_score
+            #loss.backward()
             optimizer.step()
 
-        print('avg loss:', total_loss / total_num)
-        pre = correct_predict_num/total_predict_num
-        recall =correct_predict_num/total_activity_num
-        print('precison:',pre,'recall',recall)
-        print('F1 score:',2*pre*recall/(pre+recall))
+
+            total_loss += float(loss)
+            total_correct_predict_num += int(correct_predict_num)
+            total_predict_num += int(predict_num)
+            total_activity_num += int(activity_num)
+            '''
+            if int(pdt > 0.5):
+                total_predict_num += 1
+                if int(true == 1):
+                    correct_predict_num += 1
+            if int(true==1):
+                total_activity_num += 1
+'''
+            total_num += 1
+
+
+        try:
+            pre = total_correct_predict_num/total_predict_num
+        except:
+            pre=0
+        recall =total_correct_predict_num/total_activity_num
+        f1_score = 2*pre*recall/(pre+recall+0.0001)
+        print('epoch:',epoch+1)
+        print('train avg loss:', total_loss / total_num)
+        print('train precison:',pre,'recall',recall)
+        print('train F1 score:',f1_score)
+        torch.save(lstm.state_dict(), './saved_model/lstm %.6f.pkl' % f1_score)
 
     # See what the scores are after training
-    '''
-        with torch.no_grad():
-        inputs = prepare_sequence(training_data[0][0], word_to_ix)
-        tag_scores = model(inputs)
 
-        # The sentence is "the dog ate the apple".  i,j corresponds to score for tag j
-        # for word i. The predicted tag is the maximum scoring tag.
-        # Here, we can see the predicted sequence below is 0 1 2 0 1
-        # since 0 is index of the maximum value of row 1,
-        # 1 is the index of maximum value of row 2, etc.
-        # Which is DET NOUN VERB DET NOUN, the correct sequence!
-        print(tag_scores)
-    '''
-    #torch.save(G.state_dict(), 'params_new_new_noamount %.6f.pkl' % (auc))
+        #with torch.no_grad():
+        if 1:
+            total_loss = 0
+            total_num = 0
+            correct_predict_num = 0
+            total_activity_num = 0
+            total_predict_num = 0
+
+            for i, data in enumerate(train_loader):
+                lstm.zero_grad()
+                lstm.hidden = lstm.init_hidden()
+                data = Variable(data.float()).cuda()
+                predict, true_val = lstm(data)
+                #loss = loss_function(predict, true_val)
+                #total_loss += float(loss)
+                #loss.backward()
+
+                predict_num = torch.sum(predict>0.5).float()
+                activity_num = torch.sum(true_val).float()
+                correct_predict_num = torch.sum((predict>0.5).float()*true_val.float()).float()
+                pre = correct_predict_num / predict_num
+                recall = correct_predict_num / activity_num
+                #f1_score = 2 * pre * recall / (pre + recall+0.00001) #加一个数防止nan
+                loss = 1 - f1_score
+
+                total_loss += float(loss)
+                total_correct_predict_num += int(correct_predict_num)
+                total_predict_num += int(predict_num)
+                total_activity_num += int(activity_num)
+            try:
+                pre = correct_predict_num/total_predict_num
+                recall =correct_predict_num/total_activity_num
+                f1_score = 2*pre*recall/(pre+recall)
+            except:
+                f1_score = 0
+            print('valid avg loss:', total_loss / total_num)
+            print('valid precison:',pre,'recall',recall)
+            print('valid F1 score:',f1_score)
+
 
 
 if __name__ == '__main__':
