@@ -123,6 +123,7 @@ class TransData(Dataset):
             end_time = max([launch_info[-1], video_create_info[-1], activity_info[-1][0]])  # 最后一次活跃的时间
             if 30 - end_time >= 7:
                 active = 0
+                end_time = 31
             else:
                 active = 1
             data['base_info'] = [start_time, end_time, active]
@@ -135,7 +136,7 @@ class TransData(Dataset):
         result = [np.concatenate(
             (np.array([data['register_info'][0], data['base_info'][2], data['base_info'][0], data['base_info'][1]]),
              np.zeros(8))),
-            reg_type]  # 用户ID flag strat_time end_time  and 注册type[12]
+            reg_type]  # 0:用户ID 1:flag 2:strat_time 3:end_time  and 注册type[12]
         page_type = np.zeros(5)
         action_type = np.zeros(6)
         flag = data['activity_info'][0, 0]  # 判断是否是一天的第一个数据
@@ -154,9 +155,21 @@ class TransData(Dataset):
         result.append(np.concatenate((
             np.array([flag]), page_type,
             action_type)))  # day,page_type[5],action_type[6]) total:12
-        for i in range(32-len(result)):
-            result.append(np.zeros(12))
-        return np.array(result)
+
+        sorted_result = []
+        sorted_result.append(result[0])
+        sorted_result.append(result[1])
+        j = 2
+        for i in range(1,31):
+            if j<len(result) and result[j][0] == i:
+                sorted_result.append(result[j])
+                j += 1
+            else:
+                temp = np.zeros(12)
+                temp[0] = i
+                sorted_result.append(temp)
+
+        return np.array(sorted_result)
 
     def __trans_all_data(self):
         for i, item in enumerate(self.user_data):
@@ -246,13 +259,14 @@ if __name__ == '__main__':
         train_sample = TrainRandomSampler(transed)
         train_loader = DataLoader(
             dataset=transed,
-            batch_size=10,  # 批大小
+            batch_size=1,  # 批大小
             num_workers=1,  # 多线程读取数据的线程数
             sampler=train_sample
         )
 
         for i, data in enumerate(train_loader):
-            print(data.shape)
+            #print(data)
             print(type(data))
+            print(data.shape)
             if i >= 1:
                 break
