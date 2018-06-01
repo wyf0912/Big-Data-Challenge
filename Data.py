@@ -148,13 +148,15 @@ class TransData(Dataset):
         # np.save('./data/labeled.npy', np.array(self.user_data))
         print('Make label successfully')
 
+    '''把用户行为转化成向量'''
+
     def __trans_form(self, data):
-        reg_type = np.zeros(12)
+        reg_type = np.zeros(13)
         reg_type[0] = data['register_info'][2]  # 来源渠道
         reg_type[1] = data['register_info'][3]  # 设备dict
         result = [np.concatenate(
             (np.array([data['register_info'][0], data['base_info'][2], data['base_info'][0], data['base_info'][1]]),
-             np.zeros(8))),
+             np.zeros(9))),
             reg_type]  # 0:用户ID 1:flag 2:strat_time 3:end_time  and 第二行：0：注册type 1：设备dict
         page_type = np.zeros(5)
         action_type = np.zeros(6)
@@ -166,15 +168,16 @@ class TransData(Dataset):
             else:
                 result.append(np.concatenate((
                     np.array([flag]), page_type,
-                    action_type)))  # day,page_type[5],action_type[6]) total:12
+                    action_type, np.array([0]))))  # day,page_type[5],action_type[6]) total:12
                 flag = item[0]
                 page_type = np.zeros(5)
                 action_type = np.zeros(6)
-                # print(np.array(result))
+                # print(np.array(result)
+
+        '''上述算法最后一天的数据会漏掉 手工补上'''
         result.append(np.concatenate((
             np.array([flag]), page_type,
-            action_type)))  # day,page_type[5],action_type[6]) total:12
-
+            action_type, np.array([0]))))  # day,page_type[5],action_type[6]) total:12
         sorted_result = []
         sorted_result.append(result[0])
         sorted_result.append(result[1])
@@ -184,13 +187,17 @@ class TransData(Dataset):
                 sorted_result.append(result[j])
                 j += 1
             else:
-                temp = np.zeros(12)
+                temp = np.zeros(13)
                 temp[0] = i
                 sorted_result.append(temp)
+
+        for day in data['video_create_info']:
+            sorted_result[day + 1][12] += 1
 
         if sorted_result[0][2] >= 24 and self.__delete_flag:
             '''若注册时间在最后七天 则扔掉'''
             return None
+
         return np.array(sorted_result)
 
     def __trans_all_data(self):
@@ -281,10 +288,10 @@ if __name__ == '__main__':
 
     else:
         data = []
-        #data = Data(reload=True)
-        #transed = TransData(data=data, reload=False)
         data = Data(reload=True)
-        transed = TransData(data=data, reload=False, delete_data=False)
+        transed = TransData(data=data, reload=False)
+        #data = Data(reload=True)
+        #transed = TransData(data=data, reload=False, delete_data=False)
         train_sample = TrainRandomSampler(transed)
         valid_sample = ValidRandomSampler(transed)
         train_loader = DataLoader(

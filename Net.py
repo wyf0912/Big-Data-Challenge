@@ -7,7 +7,7 @@ import os
 from Data import *
 from torch.autograd import Variable
 
-#os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 
 class LSTMTagger(nn.Module):
@@ -30,6 +30,7 @@ class LSTMTagger(nn.Module):
 
         self.trans_layer_1 = nn.Linear(12, 2 * hidden_dim)
         self.trans_layer_2 = nn.Linear(2 * hidden_dim, 2 * hidden_dim)
+        #self.trans_layer_3 = nn.Linear(2 * hidden_dim, 2 * hidden_dim)
         self.trans_layer_output = nn.Linear(2 * hidden_dim, hidden_dim)
 
         self.liner_1 = nn.Linear(hidden_dim, 2 * hidden_dim)
@@ -49,6 +50,7 @@ class LSTMTagger(nn.Module):
         for data in batch_data:
             start_time = int(data[0][2])
             end_time = int(data[0][3])
+
             true_val.append(data[0][1])
             # for i in range(start_time+1, end_time+1):
             # print(type(data[i]))
@@ -67,10 +69,12 @@ class LSTMTagger(nn.Module):
             self,hidden = (1,Variable(torch.zeros(1, 1, self.hidden_dim)).cuda())
             '''
             reg_type = np.zeros(12)
+            #print(int(data[1][0]))
             reg_type[int(data[1][0])] = 1
             reg_type = Variable(torch.Tensor(reg_type)).cuda()
             reg_type = F.relu(self.trans_layer_1(reg_type))
             reg_type = F.relu(self.trans_layer_2(reg_type))
+            #reg_type = F.relu(self.trans_layer_3(reg_type))
             reg_type = F.relu(self.trans_layer_output(reg_type))
             self.hidden = (reg_type.unsqueeze(0).unsqueeze(0),
                                Variable(torch.zeros(1, 1, self.hidden_dim)).cuda())
@@ -91,7 +95,7 @@ class LSTMTagger(nn.Module):
 
 
 def train():
-    lstm = LSTMTagger(11, 32).cuda()
+    lstm = LSTMTagger(12, 32).cuda()
     # transed = TransData(reload=True)
     data = []
     # data = Data(reload=True)
@@ -113,7 +117,7 @@ def train():
     )
     loss_function = nn.BCEWithLogitsLoss().cuda()
     optimizer = optim.SGD(lstm.parameters(), lr=0.1)
-    lstm.load_state_dict(torch.load('./saved_model/lstm_layer4 0.792809.pkl'))
+    #lstm.load_state_dict(torch.load('./saved_model/lstm_layer4 0.792809.pkl'))
 
 
 
@@ -125,8 +129,6 @@ def train():
         total_predict_num = 0
 
         for i, data in enumerate(train_loader):
-
-
             #print(i)
 
             lstm.zero_grad()
@@ -135,8 +137,8 @@ def train():
             predict, true_val = lstm(data)
             loss = loss_function(predict, true_val)
             total_loss += float(loss)
-            #loss.backward()
-            #optimizer.step()
+            loss.backward()
+            optimizer.step()
 
             predict_num = torch.sum(predict > 0.5).float()
             activity_num = torch.sum(true_val).float()
@@ -146,7 +148,6 @@ def train():
             # f1_score = 2 * pre * recall / (pre + recall+0.00001) #加一个数防止nan
             # print(f1_score)
             # loss = 1 - f1_score
-            # loss.backward()
 
             total_correct_predict_num += int(correct_predict_num)
             total_predict_num += int(predict_num)
@@ -172,7 +173,7 @@ def train():
         print('train avg loss:', total_loss / total_num)
         print('train precison:', pre, 'recall', recall)
         print('train F1 score:', f1_score)
-        #torch.save(lstm.state_dict(), './saved_model/lstm_layer4 %.6f.pkl' % f1_score)
+        torch.save(lstm.state_dict(), './saved_model/lstm_layer4+2(input12) %.6f.pkl' % f1_score)
 
         # See what the scores are after training
 
@@ -218,7 +219,7 @@ def train():
 
 
 def make_predict():
-    lstm = LSTMTagger(11, 32).cuda()
+    lstm = LSTMTagger(12, 32).cuda()
     data = Data(reload=True)
     transed = TransData(data=data, reload=True, delete_data=False)
     data_loader = DataLoader(
@@ -226,7 +227,7 @@ def make_predict():
         batch_size=1,  # 批大小
         num_workers=1,  # 多线程读取数据的线程数
     )
-    lstm.load_state_dict(torch.load('./saved_model/lstm_layer4 0.792809.pkl'))
+    lstm.load_state_dict(torch.load('./saved_model/lstm_layer4+2(input12) 0.796775.pkl'))
     f = open('result.csv', 'w')
     for i, data in enumerate(data_loader):
         id = data[0][0][0]
@@ -242,5 +243,5 @@ def make_predict():
 
 
 if __name__ == '__main__':
-    train()
-    #make_predict()
+    #train()
+    make_predict()
