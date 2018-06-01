@@ -101,18 +101,33 @@ class ValidRandomSampler(Sampler):
 
 
 class TransData(Dataset):
-    def __init__(self, reload=True, data=None, delete_data= True):
+    def __init__(self, reload=True, data=None, delete_data=True):
         if reload:
-            self.trans_form_data = np.load('./data/trans_form.npy')
+            self.__delete_flag = delete_data
+            if delete_data:
+                self.trans_form_data = np.load('./data/trans_form_deleted.npy')
+            else:
+                self.trans_form_data = np.load('./data/trans_form_without_delete.npy')
         else:
             assert isinstance(data, Data)
+            self.__delete_flag = delete_data
             self.trans_form_data = []  # np.array([])
             self.data = data
             self.user_data = self.data.user_data
             self.__data_num = len(self.user_data)
             self.__make_label()
+            self.__trans_to_idx()
             self.__trans_all_data()
             self.__reload = reload
+
+    def __trans_to_idx(self):
+        self.device_dict = {}
+        j = 0
+        for data in self.user_data:
+            if data['register_info'][3] not in self.device_dict:
+                self.device_dict[data['register_info'][3]] = j
+                j += 1
+            data['register_info'][3] = self.device_dict[data['register_info'][3]]
 
     def __make_label(self):
         for data in self.user_data:
@@ -135,11 +150,12 @@ class TransData(Dataset):
 
     def __trans_form(self, data):
         reg_type = np.zeros(12)
-        reg_type[data['register_info'][2]] = 1  # 来源渠道
+        reg_type[0] = data['register_info'][2]  # 来源渠道
+        reg_type[1] = data['register_info'][3]  # 设备dict
         result = [np.concatenate(
             (np.array([data['register_info'][0], data['base_info'][2], data['base_info'][0], data['base_info'][1]]),
              np.zeros(8))),
-            reg_type]  # 0:用户ID 1:flag 2:strat_time 3:end_time  and 注册type[12]
+            reg_type]  # 0:用户ID 1:flag 2:strat_time 3:end_time  and 第二行：0：注册type 1：设备dict
         page_type = np.zeros(5)
         action_type = np.zeros(6)
         flag = data['activity_info'][0, 0]  # 判断是否是一天的第一个数据
@@ -163,8 +179,8 @@ class TransData(Dataset):
         sorted_result.append(result[0])
         sorted_result.append(result[1])
         j = 2
-        for i in range(1,31):
-            if j<len(result) and result[j][0] == i:
+        for i in range(1, 31):
+            if j < len(result) and result[j][0] == i:
                 sorted_result.append(result[j])
                 j += 1
             else:
@@ -172,7 +188,7 @@ class TransData(Dataset):
                 temp[0] = i
                 sorted_result.append(temp)
 
-        if sorted_result[0][2]>=24:
+        if sorted_result[0][2] >= 24 and self.__delete_flag:
             '''若注册时间在最后七天 则扔掉'''
             return None
         return np.array(sorted_result)
@@ -186,7 +202,11 @@ class TransData(Dataset):
             if i % 2000 == 0 and i > 0:
                 print(i)
         print('saving the transported data')
-        np.save('./data/trans_form.npy', np.array(self.trans_form_data, dtype=int))  # 保存转换形式后的数据
+        if self.__delete_flag:
+            np.save('./data/trans_form_deleted.npy', np.array(self.trans_form_data, dtype=int))  # 保存转换形式后的数据
+
+        else:
+            np.save('./data/trans_form_without_delete.npy', np.array(self.trans_form_data, dtype=int))  # 保存转换形式后的数据
         print('Save successfully')
 
     def __getitem__(self, item):
@@ -197,6 +217,7 @@ class TransData(Dataset):
 
     def __len__(self):
         return len(self.trans_form_data)
+
 
 class Analysis():
     def __init__(self):
@@ -260,8 +281,10 @@ if __name__ == '__main__':
 
     else:
         data = []
+        #data = Data(reload=True)
+        #transed = TransData(data=data, reload=False)
         data = Data(reload=True)
-        transed = TransData(data=data, reload=True)
+        transed = TransData(data=data, reload=False, delete_data=False)
         train_sample = TrainRandomSampler(transed)
         valid_sample = ValidRandomSampler(transed)
         train_loader = DataLoader(
@@ -274,7 +297,7 @@ if __name__ == '__main__':
         print(transed.__len__())
         print(train_loader.__len__())
         for i, data in enumerate(train_loader):
-            #print(data)
+            # print(data)
             print(type(data))
             print(data.shape)
             if i >= 1:

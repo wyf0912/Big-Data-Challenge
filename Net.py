@@ -7,8 +7,8 @@ import os
 from Data import *
 from torch.autograd import Variable
 
-
 #os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
 
 class LSTMTagger(nn.Module):
     '''https://pytorch.org/tutorials/beginner/nlp/sequence_models_tutorial.html#lstm-s-in-pytorch'''
@@ -22,9 +22,21 @@ class LSTMTagger(nn.Module):
         # The LSTM takes word embeddings as inputs, and outputs hidden states
         # with dimensionality hidden_dim.
         self.lstm = nn.LSTM(input_dim, hidden_dim, batch_first=True, num_layers=1)
+
+        # self.embedding_reg = nn.Embedding(12, 32)
+        # self.embedding_device = nn.Embedding(3592, hidden_dim - 8)
+
         self.hidden = self.init_hidden()
+
+        self.trans_layer_1 = nn.Linear(12, 2 * hidden_dim)
+        self.trans_layer_2 = nn.Linear(2 * hidden_dim, 2 * hidden_dim)
+        self.trans_layer_output = nn.Linear(2 * hidden_dim, hidden_dim)
+
         self.liner_1 = nn.Linear(hidden_dim, 2 * hidden_dim)
         self.liner_2 = nn.Linear(2 * hidden_dim, 2 * hidden_dim)
+        self.liner_3 = nn.Linear(2 * hidden_dim, 2 * hidden_dim)
+        self.liner_4 = nn.Linear(2 * hidden_dim, 2 * hidden_dim)
+        # self.liner_5 = nn.Linear(2 * hidden_dim, 2 * hidden_dim)
         self.ouput_layer = nn.Linear(2 * hidden_dim, 1)
 
     def init_hidden(self):
@@ -40,20 +52,51 @@ class LSTMTagger(nn.Module):
             true_val.append(data[0][1])
             # for i in range(start_time+1, end_time+1):
             # print(type(data[i]))
-            data_temp = data[start_time + 1:end_time + 1]  #
+            data_temp = data[start_time + 1:end_time + 1][:, 1:]
+            '''
+                self.hidden = (torch.cat((self.embedding_reg(data[1][0].long().unsqueeze(0).cuda())[0][0],
+                                      self.embedding_device(data[1][1].long().unsqueeze(0).cuda())[0][0])).unsqueeze(
+                0).unsqueeze(0), Variable(
+                torch.zeros(1, 1, self.hidden_dim)).cuda())
+
+            self.hidden = (
+
+            self.hidden = (torch.cat((self.embedding_reg(data[1][0].long().unsqueeze(0).cuda())[0][0],
+                                      Variable(torch.zeros(24).float().cuda()))).unsqueeze(0).unsqueeze(0),
+                           Variable(torch.zeros(1, 1, self.hidden_dim)).cuda())
+            self,hidden = (1,Variable(torch.zeros(1, 1, self.hidden_dim)).cuda())
+            '''
+            reg_type = np.zeros(12)
+            reg_type[int(data[1][0])] = 1
+            reg_type = Variable(torch.Tensor(reg_type)).cuda()
+            reg_type = F.relu(self.trans_layer_1(reg_type))
+            reg_type = F.relu(self.trans_layer_2(reg_type))
+            reg_type = F.relu(self.trans_layer_output(reg_type))
+            self.hidden = (reg_type.unsqueeze(0).unsqueeze(0),
+                               Variable(torch.zeros(1, 1, self.hidden_dim)).cuda())
             # print(type(data_temp.unsqueeze(0)),data_temp.unsqueeze(0).shape,data_temp.unsqueeze(0))
+
+            # out, self.hidden = self.lstm(F.tanh(data_temp.unsqueeze(0)), self.hidden)
             out, self.hidden = self.lstm(data_temp.unsqueeze(0), self.hidden)
+
             # print(self.hidden)
-            x = F.relu(self.liner_1(F.tanh(self.hidden[0][0])))
+            x = F.relu(self.liner_1(self.hidden[0][0]))
             x = F.relu(self.liner_2(x))
+            x = F.relu(self.liner_3(x))
+            x = F.relu(self.liner_4(x))
+            # x = F.relu(self.liner_5(x))
             x = F.sigmoid(self.ouput_layer(x))
             predict.append(x[0])
         return torch.cat(predict), torch.cat(true_val)
 
 
 def train():
-    lstm = LSTMTagger(12, 32).cuda()
-    transed = TransData(reload=True)
+    lstm = LSTMTagger(11, 32).cuda()
+    # transed = TransData(reload=True)
+    data = []
+    # data = Data(reload=True)
+    transed = TransData(data=data, reload=True, delete_data=True)
+
     train_sample = TrainRandomSampler(transed)
     valid_sample = ValidRandomSampler(transed)
     train_loader = DataLoader(
@@ -70,10 +113,9 @@ def train():
     )
     loss_function = nn.BCEWithLogitsLoss().cuda()
     optimizer = optim.SGD(lstm.parameters(), lr=0.1)
-    lstm.load_state_dict(torch.load('./saved_model/lstm 0.816068.pkl'))
-    # See what the scores are before training
-    # Note that element i,j of the output is the score for tag j for word i.
-    # Here we don't need to train, so the code is wrapped in torch.no_grad()
+    lstm.load_state_dict(torch.load('./saved_model/lstm_layer4 0.792809.pkl'))
+
+
 
     for epoch in range(300):  # again, normally you would NOT do 300 epochs, it is toy data
         total_loss = 0
@@ -83,13 +125,18 @@ def train():
         total_predict_num = 0
 
         for i, data in enumerate(train_loader):
+
+
+            #print(i)
+
             lstm.zero_grad()
-            lstm.hidden = lstm.init_hidden()
+            # lstm.hidden = lstm.init_hidden()
             data = Variable(data.float()).cuda()
             predict, true_val = lstm(data)
             loss = loss_function(predict, true_val)
             total_loss += float(loss)
-            loss.backward()
+            #loss.backward()
+            #optimizer.step()
 
             predict_num = torch.sum(predict > 0.5).float()
             activity_num = torch.sum(true_val).float()
@@ -100,9 +147,7 @@ def train():
             # print(f1_score)
             # loss = 1 - f1_score
             # loss.backward()
-            optimizer.step()
 
-            total_loss += float(loss)
             total_correct_predict_num += int(correct_predict_num)
             total_predict_num += int(predict_num)
             total_activity_num += int(activity_num)
@@ -120,13 +165,14 @@ def train():
             pre = total_correct_predict_num / total_predict_num
         except:
             pre = 0
+
         recall = total_correct_predict_num / total_activity_num
         f1_score = 2 * pre * recall / (pre + recall + 0.0001)
         print('epoch:', epoch + 1)
         print('train avg loss:', total_loss / total_num)
         print('train precison:', pre, 'recall', recall)
         print('train F1 score:', f1_score)
-        torch.save(lstm.state_dict(), './saved_model/lstm %.6f.pkl' % f1_score)
+        #torch.save(lstm.state_dict(), './saved_model/lstm_layer4 %.6f.pkl' % f1_score)
 
         # See what the scores are after training
 
@@ -141,21 +187,16 @@ def train():
 
             for i, data in enumerate(valid_loader):
                 lstm.zero_grad()
-                lstm.hidden = lstm.init_hidden()
+                # lstm.hidden = lstm.init_hidden()
                 data = Variable(data.float()).cuda()
                 predict, true_val = lstm(data)
-                # loss = loss_function(predict, true_val)
-                # total_loss += float(loss)
-                # loss.backward()
+                loss = loss_function(predict, true_val)
+                total_loss += float(loss)
 
                 predict_num = torch.sum(predict > 0.5).float()
                 activity_num = torch.sum(true_val).float()
                 correct_predict_num = torch.sum((predict > 0.5).float() * true_val.float()).float()
 
-                # f1_score = 2 * pre * recall / (pre + recall+0.00001) #加一个数防止nan
-                loss = 1 - f1_score
-
-                total_loss += float(loss)
                 total_correct_predict_num += int(correct_predict_num)
                 total_predict_num += int(predict_num)
                 total_activity_num += int(activity_num)
@@ -173,30 +214,33 @@ def train():
             print('valid avg loss:', total_loss / total_num)
             print('valid precison:', pre, 'recall', recall)
             print('valid F1 score:', f1_score)
+            print('')
 
 
 def make_predict():
-    lstm = LSTMTagger(12, 32).cuda()
+    lstm = LSTMTagger(11, 32).cuda()
     data = Data(reload=True)
-    transed = TransData(data=data,reload=False,delete_data=False)
+    transed = TransData(data=data, reload=True, delete_data=False)
     data_loader = DataLoader(
         dataset=transed,
         batch_size=1,  # 批大小
         num_workers=1,  # 多线程读取数据的线程数
     )
-    lstm.load_state_dict(torch.load('./saved_model/lstm 0.816068.pkl'))
-    f = open('result.txt', 'w')
+    lstm.load_state_dict(torch.load('./saved_model/lstm_layer4 0.792809.pkl'))
+    f = open('result.csv', 'w')
     for i, data in enumerate(data_loader):
         id = data[0][0][0]
         lstm.zero_grad()
-        lstm.hidden = lstm.init_hidden()
-        data[0][0][3] = 30
+        #lstm.hidden = lstm.init_hidden()
+        data[0][0][3] = 31
         data = Variable(data.float()).cuda()
         predict, true_val = lstm(data)
         if int(predict[0] > 0.5):
-            f.write(str(id)+'\n')
+            f.write(str(int(id)) + '\n')
     f.close()
 
+
+
 if __name__ == '__main__':
-    # train()
-    make_predict()
+    train()
+    #make_predict()
